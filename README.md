@@ -15,7 +15,7 @@ How to use it?
 
 Select a Challenge Type and adjust the parameter sliders (Difficulty, Verticality, Density), then click "Generate Single Chunk" or "Batch Generate" to create challenges.
 Review the visual preview and generate multiple times to see variation from the built-in randomness. Export chunks as PNG for reference or JSON/Tiled
-format for direct import into your game engine—the JSON includes a 2D tile array with IDs (0-10) mapped to tile types like floor, platform, ladder, spike, etc
+format for direct import into your game engine - the JSON includes a 2D tile array with IDs (0-10) mapped to tile types like floor, platform, ladder, spike, etc
 
 Parameters: 
 

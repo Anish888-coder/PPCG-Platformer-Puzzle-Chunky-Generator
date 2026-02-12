@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platformer Challenge Chunk Generator</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        // Lucide icons as inline SVG components
+        const RefreshCw = ({ size = 20 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+        );
+
+        const Download = ({ size = 20 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+        );
+
+        const Trash2 = ({ size = 20 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>
+            </svg>
+        );
+
+        const FileDown = ({ size = 20 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3"/>
+            </svg>
+        );
+
+        const ChunkGenerator = () => {
+            const [challengeType, setChallengeType] = useState('wall-jump');
+            const [difficulty, setDifficulty] = useState(2);
+            const [verticality, setVerticality] = useState(2);
+            const [density, setDensity] = useState(2);
+            const [maxSpaceLength, setMaxSpaceLength] = useState(2);
+            const [enableSpacing, setEnableSpacing] = useState(false);
+            const [chunks, setChunks] = useState([]);
+            const [currentChunk, setCurrentChunk] = useState(null);
+            const [batchSize, setBatchSize] = useState(5);
+
+            const tiles = {
+                sky: { color: '#87CEEB', char: '·' },
+                floor: { color: '#8B4513', char: '█' },
+                mud: { color: '#654321', char: '≈' },
+                ladder: { color: '#DAA520', char: 'H' },
+                platform: { color: '#A0522D', char: '─' },
+                trampoline: { color: '#32CD32', char: '^' },
+                wallJump: { color: '#696969', char: '║' },
+                entry: { color: '#00FF00', char: 'E' },
+                exit: { color: '#FFD700', char: 'X' },
+                slope: { color: '#CD853F', char: '/' },
+                spike: { color: '#FF0000', char: '▲' }
+            };
+
+            const getRandomInRange = (baseValue) => {
+                const rangeStart = Math.floor((baseValue - 1) / 3) * 3 + 1;
+                const rangeEnd = Math.min(rangeStart + 2, 4);
+                return rangeStart + Math.floor(Math.random() * (rangeEnd - rangeStart + 1));
+            };
+
+            const addSpacingToSegment = (arr, y, startX, endX, maxSpace, tileType) => {
+                if (!enableSpacing || maxSpace === 0 || endX - startX < 2) {
+                    for (let x = startX; x <= endX; x++) {
+                        arr[y][x] = tileType;
+                    }
+                    return;
+                }
+
+                let currentX = startX;
+                const firstSegment = 1 + Math.floor(Math.random() * 2);
+                for (let i = 0; i < firstSegment && currentX <= endX; i++) {
+                    arr[y][currentX] = tileType;
+                    currentX++;
+                }
+
+                while (currentX <= endX) {
+                    const gapSize = Math.min(
+                        1 + Math.floor(Math.random() * maxSpace),
+                        maxSpace,
+                        endX - currentX
+                    );
+                    
+                    if (currentX + gapSize > endX) {
+                        while (currentX <= endX) {
+                            arr[y][currentX] = tileType;
+                            currentX++;
+                        }
+                        break;
+                    }
+                    
+                    currentX += gapSize;
+                    
+                    if (currentX <= endX) {
+                        const segmentSize = Math.min(
+                            1 + Math.floor(Math.random() * 3),
+                            endX - currentX + 1
+                        );
+                        for (let i = 0; i < segmentSize && currentX <= endX; i++) {
+                            arr[y][currentX] = tileType;
+                            currentX++;
+                        }
+                    }
+                }
+            };
+
+            const addVerticalSpacingToWall = (arr, x, startY, endY, maxSpace) => {
+                if (!enableSpacing || maxSpace === 0 || endY - startY < 2) {
+                    for (let y = startY; y <= endY; y++) {
+                        arr[y][x] = 'wallJump';
+                    }
+                    return;
+                }
+
+                let currentY = startY;
+                const firstSegment = 1 + Math.floor(Math.random() * 2);
+                for (let i = 0; i < firstSegment && currentY <= endY; i++) {
+                    arr[currentY][x] = 'wallJump';
+                    currentY++;
+                }
+
+                while (currentY <= endY) {
+                    const gapSize = Math.min(
+                        1 + Math.floor(Math.random() * maxSpace),
+                        maxSpace,
+                        endY - currentY
+                    );
+                    
+                    if (currentY + gapSize > endY) {
+                        while (currentY <= endY) {
+                            arr[currentY][x] = 'wallJump';
+                            currentY++;
+                        }
+                        break;
+                    }
+                    
+                    currentY += gapSize;
+                    
+                    if (currentY <= endY) {
+                        const segmentSize = Math.min(
+                            1 + Math.floor(Math.random() * 3),
+                            endY - currentY + 1
+                        );
+                        for (let i = 0; i < segmentSize && currentY <= endY; i++) {
+                            arr[currentY][x] = 'wallJump';
+                            currentY++;
+                        }
+                    }
+                }
+            };
+
+            const generateChunk = (type, diff, vert, dens) => {
+                const randomDiff = getRandomInRange(diff);
+                const randomVert = getRandomInRange(vert);
+                const randomDens = getRandomInRange(dens);
+
+                const width = 10 + (randomDens * 2);
+                const height = 8 + (randomVert * 2);
+                const chunk = Array(height).fill(null).map(() => Array(width).fill('sky'));
+                
+                const entryY = Math.floor(height * 0.7);
+                chunk[entryY][0] = 'entry';
+                chunk[entryY][1] = 'floor';
+                
+                if (type === 'wall-jump') {
+                    const wallHeight = 3 + randomDiff + randomVert;
+                    const wallSpacing = Math.max(2, 4 - randomDiff);
+                    const wallX = 3;
+                    const wallX2 = wallX + wallSpacing;
+                    
+                    const wallStartY = Math.max(0, entryY - wallHeight);
+                    addVerticalSpacingToWall(chunk, wallX, wallStartY, entryY, maxSpaceLength);
+                    if (wallX2 < width) {
+                        addVerticalSpacingToWall(chunk, wallX2, wallStartY, entryY, maxSpaceLength);
+                    }
+                    
+                    if (randomDiff >= 3 && randomDens >= 2) {
+                        const spikeY = entryY + 1;
+                        if (spikeY < height) {
+                            for (let x = wallX + 1; x < wallX2 && x < width; x++) {
+                                chunk[spikeY][x] = 'spike';
+                            }
+                        }
+                    }
+                    
+                    const exitY = Math.max(1, entryY - wallHeight);
+                    const exitX = Math.min(width - 2, wallX2 + 2 + randomDens);
+                    const platformEnd = Math.min(exitX + 2, width - 1);
+                    
+                    addSpacingToSegment(chunk, exitY, exitX, platformEnd, maxSpaceLength, 'platform');
+                    chunk[exitY][Math.min(exitX + 1, width - 1)] = 'exit';
+                    
+                } else if (type === 'momentum') {
+                    const hasSlope = randomDiff >= 2;
+                    const hasMud = randomDiff >= 2;
+                    const gapSize = 2 + randomDiff;
+                    
+                    if (hasSlope) {
+                        const slopeLength = 2 + randomDens;
+                        for (let i = 0; i < slopeLength && i < height - entryY; i++) {
+                            if (2 + i < width) chunk[entryY - i][2 + i] = 'slope';
+                        }
+                    }
+                    
+                    if (hasMud && randomDens >= 2) {
+                        const mudStart = hasSlope ? 5 : 3;
+                        const mudLength = 2 + randomDens;
+                        const mudEnd = Math.min(mudStart + mudLength - 1, width - gapSize - 4);
+                        addSpacingToSegment(chunk, entryY, mudStart, mudEnd, maxSpaceLength, 'mud');
+                    }
+                    
+                    const platformX = width - 3;
+                    const platformEnd = Math.min(platformX + 1, width - 1);
+                    addSpacingToSegment(chunk, entryY, platformX, platformEnd, maxSpaceLength, 'platform');
+                    if (platformX + 1 < width) chunk[entryY][platformX + 1] = 'exit';
+                    
+                } else if (type === 'vertical') {
+                    const ladderHeight = 2 + randomVert + randomDens;
+                    
+                    const ladderStartY = Math.max(0, entryY - ladderHeight);
+                    addVerticalSpacingToWall(chunk, 3, ladderStartY, entryY, maxSpaceLength);
+                    
+                    if (entryY - ladderHeight >= 0) chunk[entryY - ladderHeight][4] = 'platform';
+                    
+                    const numTrampolines = Math.min(2, 1 + Math.floor(randomDens / 2));
+                    for (let t = 0; t < numTrampolines; t++) {
+                        if (entryY - ladderHeight >= 0 && 5 + t < width) {
+                            chunk[entryY - ladderHeight][5 + t] = 'trampoline';
+                        }
+                    }
+                    
+                    const highY = Math.max(1, entryY - ladderHeight - 2 - randomDiff - randomVert);
+                    const platformStart = 7 + randomDens;
+                    const platformEnd = Math.min(platformStart + 2, width - 1);
+                    addSpacingToSegment(chunk, highY, platformStart, platformEnd, maxSpaceLength, 'platform');
+                    if (platformStart + 1 < width) chunk[highY][platformStart + 1] = 'exit';
+                    
+                } else if (type === 'timing') {
+                    const numTrampolines = 1 + Math.floor(randomDiff / 2) + Math.floor(randomDens / 2);
+                    const spacing = Math.max(1, 3 - randomDiff);
+                    
+                    let x = 3;
+                    for (let i = 0; i < numTrampolines && x < width - 4; i++) {
+                        chunk[entryY][x] = 'trampoline';
+                        x += spacing;
+                    }
+                    
+                    const exitY = randomDiff > 2 ? entryY - (1 + randomVert) : entryY;
+                    const exitX = width - 3;
+                    const platformEnd = Math.min(exitX + 1, width - 1);
+                    if (exitY >= 0) {
+                        addSpacingToSegment(chunk, exitY, exitX, platformEnd, maxSpaceLength, 'platform');
+                        if (exitX + 1 < width) chunk[exitY][exitX + 1] = 'exit';
+                    }
+                }
+                
+                return chunk;
+            };
+
+            const handleGenerate = () => {
+                const newChunk = generateChunk(challengeType, difficulty, verticality, density);
+                setCurrentChunk(newChunk);
+                setChunks([
+                    { 
+                        chunk: newChunk, 
+                        type: challengeType, 
+                        diff: difficulty, 
+                        vert: verticality,
+                        dens: density,
+                        spacing: enableSpacing,
+                        maxSpace: maxSpaceLength,
+                        timestamp: Date.now()
+                    }, 
+                    ...chunks
+                ]);
+            };
+
+            const handleBatchGenerate = () => {
+                const newChunks = [];
+                for (let i = 0; i < batchSize; i++) {
+                    const chunk = generateChunk(challengeType, difficulty, verticality, density);
+                    newChunks.push({
+                        chunk,
+                        type: challengeType,
+                        diff: difficulty,
+                        vert: verticality,
+                        dens: density,
+                        spacing: enableSpacing,
+                        maxSpace: maxSpaceLength,
+                        timestamp: Date.now() + i
+                    });
+                }
+                setChunks([...newChunks, ...chunks]);
+                if (newChunks.length > 0) setCurrentChunk(newChunks[0].chunk);
+            };
+
+            const downloadScreenshot = (chunkData) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const tileSize = 40;
+                const targetChunk = chunkData || currentChunk;
+                
+                canvas.width = targetChunk[0].length * tileSize;
+                canvas.height = targetChunk.length * tileSize;
+                
+                targetChunk.forEach((row, y) => {
+                    row.forEach((tile, x) => {
+                        ctx.fillStyle = tiles[tile].color;
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                        ctx.strokeStyle = '#00000030';
+                        ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    });
+                });
+                
+                canvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `chunk-${challengeType}-d${difficulty}-v${verticality}-${Date.now()}.png`;
+                    a.click();
+                });
+            };
+
+            const downloadJSON = (chunkData, metadata) => {
+                const targetChunk = chunkData || currentChunk;
+                const chunkMetadata = metadata || {
+                    type: challengeType,
+                    diff: difficulty,
+                    vert: verticality,
+                    dens: density,
+                    spacing: enableSpacing,
+                    maxSpace: maxSpaceLength
+                };
+
+                // Create a tile ID mapping for game engines
+                const tileMapping = {
+                    sky: 0,
+                    floor: 1,
+                    mud: 2,
+                    ladder: 3,
+                    platform: 4,
+                    trampoline: 5,
+                    wallJump: 6,
+                    entry: 7,
+                    exit: 8,
+                    slope: 9,
+                    spike: 10
+                };
+
+                // Convert chunk to numeric IDs
+                const numericData = targetChunk.map(row => 
+                    row.map(tile => tileMapping[tile])
+                );
+
+                // Create comprehensive JSON export
+                const exportData = {
+                    version: "1.0",
+                    generator: "Platformer Challenge Chunk Generator",
+                    metadata: {
+                        challengeType: chunkMetadata.type,
+                        difficulty: chunkMetadata.diff,
+                        verticality: chunkMetadata.vert,
+                        density: chunkMetadata.dens,
+                        spacingEnabled: chunkMetadata.spacing,
+                        maxSpaceLength: chunkMetadata.maxSpace,
+                        generatedAt: new Date().toISOString()
+                    },
+                    dimensions: {
+                        width: targetChunk[0].length,
+                        height: targetChunk.length,
+                        tileSize: 32  // Recommended tile size for games
+                    },
+                    tileMapping: tileMapping,
+                    tileLegend: {
+                        0: { name: "sky", type: "empty", collision: false },
+                        1: { name: "floor", type: "solid", collision: true },
+                        2: { name: "mud", type: "slow", collision: true, speedMultiplier: 0.5 },
+                        3: { name: "ladder", type: "climbable", collision: false },
+                        4: { name: "platform", type: "platform", collision: true, oneWay: true },
+                        5: { name: "trampoline", type: "bounce", collision: true, bounceForce: 2.0 },
+                        6: { name: "wallJump", type: "wall", collision: true, wallJumpable: true },
+                        7: { name: "entry", type: "spawn", collision: false },
+                        8: { name: "exit", type: "goal", collision: false },
+                        9: { name: "slope", type: "slope", collision: true, angle: 45 },
+                        10: { name: "spike", type: "hazard", collision: true, damage: 1 }
+                    },
+                    layers: {
+                        collision: numericData,
+                        visual: targetChunk  // Raw tile names for reference
+                    }
+                };
+
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chunk-${chunkMetadata.type}-d${chunkMetadata.diff}-v${chunkMetadata.vert}-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const downloadTiledJSON = (chunkData, metadata) => {
+                const targetChunk = chunkData || currentChunk;
+                const chunkMetadata = metadata || {
+                    type: challengeType,
+                    diff: difficulty,
+                    vert: verticality,
+                    dens: density
+                };
+
+                // Tiled uses 1-indexed tile IDs (0 = empty)
+                const tileMapping = {
+                    sky: 0,
+                    floor: 1,
+                    mud: 2,
+                    ladder: 3,
+                    platform: 4,
+                    trampoline: 5,
+                    wallJump: 6,
+                    entry: 7,
+                    exit: 8,
+                    slope: 9,
+                    spike: 10
+                };
+
+                // Flatten the 2D array into 1D array (Tiled format)
+                const flatData = [];
+                targetChunk.forEach(row => {
+                    row.forEach(tile => {
+                        flatData.push(tileMapping[tile]);
+                    });
+                });
+
+                // Create Tiled-compatible JSON
+                const tiledData = {
+                    compressionlevel: -1,
+                    height: targetChunk.length,
+                    width: targetChunk[0].length,
+                    infinite: false,
+                    layers: [
+                        {
+                            data: flatData,
+                            height: targetChunk.length,
+                            width: targetChunk[0].length,
+                            id: 1,
+                            name: "Tiles",
+                            opacity: 1,
+                            type: "tilelayer",
+                            visible: true,
+                            x: 0,
+                            y: 0
+                        }
+                    ],
+                    nextlayerid: 2,
+                    nextobjectid: 1,
+                    orientation: "orthogonal",
+                    renderorder: "right-down",
+                    tiledversion: "1.10.2",
+                    tileheight: 32,
+                    tilewidth: 32,
+                    type: "map",
+                    version: "1.10",
+                    tilesets: [
+                        {
+                            firstgid: 1,
+                            source: "platformer_tileset.tsx",
+                            name: "Platformer Tiles",
+                            tilecount: 11,
+                            columns: 11,
+                            tilewidth: 32,
+                            tileheight: 32,
+                            tiles: [
+                                { id: 0, type: "floor", properties: [{ name: "collision", type: "bool", value: true }] },
+                                { id: 1, type: "mud", properties: [{ name: "collision", type: "bool", value: true }, { name: "speed", type: "float", value: 0.5 }] },
+                                { id: 2, type: "ladder", properties: [{ name: "climbable", type: "bool", value: true }] },
+                                { id: 3, type: "platform", properties: [{ name: "oneWayPlatform", type: "bool", value: true }] },
+                                { id: 4, type: "trampoline", properties: [{ name: "bounceForce", type: "float", value: 2.0 }] },
+                                { id: 5, type: "wallJump", properties: [{ name: "wallJumpable", type: "bool", value: true }] },
+                                { id: 6, type: "entry", properties: [{ name: "spawn", type: "bool", value: true }] },
+                                { id: 7, type: "exit", properties: [{ name: "goal", type: "bool", value: true }] },
+                                { id: 8, type: "slope", properties: [{ name: "angle", type: "int", value: 45 }] },
+                                { id: 9, type: "spike", properties: [{ name: "hazard", type: "bool", value: true }, { name: "damage", type: "int", value: 1 }] }
+                            ]
+                        }
+                    ],
+                    properties: [
+                        { name: "challengeType", type: "string", value: chunkMetadata.type },
+                        { name: "difficulty", type: "int", value: chunkMetadata.diff },
+                        { name: "verticality", type: "int", value: chunkMetadata.vert },
+                        { name: "density", type: "int", value: chunkMetadata.dens }
+                    ]
+                };
+
+                const blob = new Blob([JSON.stringify(tiledData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chunk-tiled-${chunkMetadata.type}-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const downloadAllScreenshots = () => {
+                chunks.slice(0, 20).forEach((item, idx) => {
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const tileSize = 40;
+                        
+                        canvas.width = item.chunk[0].length * tileSize;
+                        canvas.height = item.chunk.length * tileSize;
+                        
+                        item.chunk.forEach((row, y) => {
+                            row.forEach((tile, x) => {
+                                ctx.fillStyle = tiles[tile].color;
+                                ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                                ctx.strokeStyle = '#00000030';
+                                ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                            });
+                        });
+                        
+                        canvas.toBlob((blob) => {
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `chunk-${idx + 1}-${item.type}-d${item.diff}-v${item.vert}-dens${item.dens}.png`;
+                            a.click();
+                        });
+                    }, idx * 200);
+                });
+            };
+
+            const clearAllChunks = () => {
+                setChunks([]);
+                setCurrentChunk(null);
+            };
+
+            return (
+                <div className="w-full min-h-screen bg-gray-900 text-white p-6">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-3xl font-bold mb-2">Platformer Challenge Chunk Generator</h1>
+                        <p className="text-gray-400 mb-6">Improved with Spacing & Randomness</p>
+                        
+                        <div className="bg-gray-800 rounded-lg p-6 mb-6">
+                            <h2 className="text-xl font-semibold mb-3">Export Formats</h2>
+                            <div className="grid md:grid-cols-3 gap-4 text-sm">
+                                <div className="bg-gray-700 p-4 rounded">
+                                    <h3 className="font-semibold text-green-400 mb-2">PNG Export</h3>
+                                    <p className="text-gray-300">Visual reference image. Great for documentation, presentations, or manual recreation.</p>
+                                </div>
+                                <div className="bg-gray-700 p-4 rounded">
+                                    <h3 className="font-semibold text-blue-400 mb-2">JSON Export</h3>
+                                    <p className="text-gray-300">Universal game engine format with tile IDs, collision data, and metadata. Includes tile properties like bounce force, damage, etc.</p>
+                                </div>
+                                <div className="bg-gray-700 p-4 rounded">
+                                    <h3 className="font-semibold text-purple-400 mb-2">Tiled JSON Export</h3>
+                                    <p className="text-gray-300">Ready to import into Tiled Map Editor. Includes layer data, tileset references, and custom properties.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-gray-800 rounded-lg p-6 mb-6">
+                            <h2 className="text-xl font-semibold mb-4">Parameters</h2>
+                            
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block mb-2 font-medium">Challenge Type</label>
+                                    <select
+                                        value={challengeType}
+                                        onChange={(e) => setChallengeType(e.target.value)}
+                                        className="w-full bg-gray-700 p-2 rounded text-white"
+                                    >
+                                        <option value="wall-jump">Wall-Jump Ascent</option>
+                                        <option value="momentum">Momentum Gap</option>
+                                        <option value="vertical">Vertical Climb</option>
+                                        <option value="timing">Trampoline Timing</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block mb-2 font-medium">
+                                        Difficulty: {difficulty}
+                                        <span className="text-gray-400 ml-2">
+                                            ({['Easy', 'Medium', 'Hard', 'Expert'][difficulty - 1]})
+                                            <span className="text-yellow-400 ml-1">±random</span>
+                                        </span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="4"
+                                        value={difficulty}
+                                        onChange={(e) => setDifficulty(parseInt(e.target.value))}
+                                        className="w-full"
+                                    />
+                                    <p className="text-sm text-gray-400 mt-1">Gap size, wall height, obstacle spacing (with randomness)</p>
+                                </div>
+
+                                <div>
+                                    <label className="block mb-2 font-medium">
+                                        Verticality: {verticality}
+                                        <span className="text-gray-400 ml-2">
+                                            ({['Flat', 'Medium', 'Tall', 'Tower'][verticality - 1]})
+                                            <span className="text-yellow-400 ml-1">±random</span>
+                                        </span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="4"
+                                        value={verticality}
+                                        onChange={(e) => setVerticality(parseInt(e.target.value))}
+                                        className="w-full"
+                                    />
+                                    <p className="text-sm text-gray-400 mt-1">Vertical space and climb height (with randomness)</p>
+                                </div>
+
+                                <div>
+                                    <label className="block mb-2 font-medium">
+                                        Density: {density}
+                                        <span className="text-gray-400 ml-2">
+                                            ({['Sparse', 'Normal', 'Dense', 'Packed'][density - 1]})
+                                            <span className="text-yellow-400 ml-1">±random</span>
+                                        </span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="4"
+                                        value={density}
+                                        onChange={(e) => setDensity(parseInt(e.target.value))}
+                                        className="w-full"
+                                    />
+                                    <p className="text-sm text-gray-400 mt-1">Number of obstacles and chunk width (with randomness)</p>
+                                </div>
+
+                                <div className="md:col-span-2 border-t border-gray-700 pt-4">
+                                    <div className="flex items-center gap-4 mb-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={enableSpacing}
+                                                onChange={(e) => setEnableSpacing(e.target.checked)}
+                                                className="w-5 h-5"
+                                            />
+                                            <span className="font-medium">Enable Spacing</span>
+                                        </label>
+                                        <span className="text-sm text-gray-400">
+                                            Adds gaps between platform segments
+                                        </span>
+                                    </div>
+
+                                    {enableSpacing && (
+                                        <div>
+                                            <label className="block mb-2 font-medium">
+                                                Max Space Length: {maxSpaceLength} tiles
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min="1"
+                                                max="4"
+                                                value={maxSpaceLength}
+                                                onChange={(e) => setMaxSpaceLength(parseInt(e.target.value))}
+                                                className="w-full"
+                                            />
+                                            <p className="text-sm text-gray-400 mt-1">
+                                                Maximum gap size between platform/wall segments
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-3 mt-6">
+                                <button
+                                    onClick={handleGenerate}
+                                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-medium"
+                                >
+                                    <RefreshCw size={20} />
+                                    Generate Single Chunk
+                                </button>
+
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="20"
+                                        value={batchSize}
+                                        onChange={(e) => setBatchSize(parseInt(e.target.value) || 1)}
+                                        className="w-16 bg-gray-700 p-2 rounded text-center"
+                                    />
+                                    <button
+                                        onClick={handleBatchGenerate}
+                                        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded font-medium"
+                                    >
+                                        <RefreshCw size={20} />
+                                        Batch Generate (Unique)
+                                    </button>
+                                </div>
+                                
+                                {currentChunk && (
+                                    <>
+                                        <button
+                                            onClick={() => downloadScreenshot(currentChunk)}
+                                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-medium"
+                                        >
+                                            <Download size={20} />
+                                            Download PNG
+                                        </button>
+                                        <button
+                                            onClick={() => downloadJSON(currentChunk)}
+                                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-medium"
+                                        >
+                                            <FileDown size={20} />
+                                            Download JSON
+                                        </button>
+                                        <button
+                                            onClick={() => downloadTiledJSON(currentChunk)}
+                                            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded font-medium"
+                                        >
+                                            <FileDown size={20} />
+                                            Download Tiled JSON
+                                        </button>
+                                    </>
+                                )}
+
+                                {chunks.length > 0 && (
+                                    <>
+                                        <button
+                                            onClick={downloadAllScreenshots}
+                                            className="flex items-center gap-2 bg-green-700 hover:bg-green-800 px-6 py-3 rounded font-medium"
+                                        >
+                                            <FileDown size={20} />
+                                            Download All (Max 20)
+                                        </button>
+                                        
+                                        <button
+                                            onClick={clearAllChunks}
+                                            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-6 py-3 rounded font-medium"
+                                        >
+                                            <Trash2 size={20} />
+                                            Clear All
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {currentChunk && (
+                            <div className="bg-gray-800 rounded-lg p-6 mb-6">
+                                <h2 className="text-xl font-semibold mb-4">Current Chunk Preview</h2>
+                                <div className="bg-black p-4 rounded inline-block">
+                                    <div style={{ display: 'grid', gap: '2px' }}>
+                                        {currentChunk.map((row, y) => (
+                                            <div key={y} style={{ display: 'flex', gap: '2px' }}>
+                                                {row.map((tile, x) => (
+                                                    <div
+                                                        key={`${x}-${y}`}
+                                                        style={{
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            backgroundColor: tiles[tile].color,
+                                                            border: '1px solid #ffffff20',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontWeight: 'bold',
+                                                            fontSize: '20px',
+                                                            color: tile === 'sky' ? '#ffffff20' : '#000'
+                                                        }}
+                                                        title={tile}
+                                                    >
+                                                        {tiles[tile].char}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.entry.color }}></div>
+                                        <span>Entry Point</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.exit.color }}></div>
+                                        <span>Exit Point</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.wallJump.color }}></div>
+                                        <span>Wall Jump</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.ladder.color }}></div>
+                                        <span>Ladder</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.trampoline.color }}></div>
+                                        <span>Trampoline</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.platform.color }}></div>
+                                        <span>Platform</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.mud.color }}></div>
+                                        <span>Mud</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.slope.color }}></div>
+                                        <span>Slope</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6" style={{ backgroundColor: tiles.spike.color }}></div>
+                                        <span>Spike</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-gray-800 rounded-lg p-6">
+                            <h2 className="text-xl font-semibold mb-4">
+                                Generated Chunks ({chunks.length}) - Showing Latest 20
+                            </h2>
+                            {chunks.length === 0 ? (
+                                <p className="text-gray-400">Generate chunks to see variation across parameter settings</p>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {chunks.slice(0, 20).map((item, idx) => (
+                                        <div key={item.timestamp} className="bg-black p-3 rounded border border-gray-700">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <p className="text-xs text-gray-400">
+                                                    #{chunks.length - idx}: {item.type}
+                                                </p>
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        onClick={() => downloadScreenshot(item.chunk)}
+                                                        className="text-green-400 hover:text-green-300"
+                                                        title="Download PNG"
+                                                    >
+                                                        <Download size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => downloadJSON(item.chunk, item)}
+                                                        className="text-blue-400 hover:text-blue-300"
+                                                        title="Download JSON"
+                                                    >
+                                                        <FileDown size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => downloadTiledJSON(item.chunk, item)}
+                                                        className="text-purple-400 hover:text-purple-300"
+                                                        title="Download Tiled JSON"
+                                                    >
+                                                        <FileDown size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mb-2">
+                                                D:{item.diff} V:{item.vert} Dens:{item.dens}
+                                                {item.spacing && ` | Space:${item.maxSpace}`}
+                                            </p>
+                                            <div style={{ display: 'grid', gap: '1px' }}>
+                                                {item.chunk.map((row, y) => (
+                                                    <div key={y} style={{ display: 'flex', gap: '1px' }}>
+                                                        {row.map((tile, x) => (
+                                                            <div
+                                                                key={`${x}-${y}`}
+                                                                style={{
+                                                                    width: '10px',
+                                                                    height: '10px',
+                                                                    backgroundColor: tiles[tile].color
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<ChunkGenerator />, document.getElementById('root'));
+    </script>
+</body>
+</html>

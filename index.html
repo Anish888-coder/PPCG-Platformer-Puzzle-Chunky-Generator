@@ -15,7 +15,6 @@
     <script type="text/babel">
         const { useState } = React;
 
-        // Lucide icons as inline SVG components
         const RefreshCw = ({ size = 20 }) => (
             <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
@@ -48,6 +47,9 @@
             const [density, setDensity] = useState(2);
             const [maxSpaceLength, setMaxSpaceLength] = useState(2);
             const [enableSpacing, setEnableSpacing] = useState(false);
+            // CHANGE 1: Randomness is now optional, with a user-controlled max offset
+            const [enableRandomness, setEnableRandomness] = useState(false);
+            const [maxRandomOffset, setMaxRandomOffset] = useState(1);
             const [chunks, setChunks] = useState([]);
             const [currentChunk, setCurrentChunk] = useState(null);
             const [batchSize, setBatchSize] = useState(5);
@@ -66,10 +68,13 @@
                 spike: { color: '#FF0000', char: '▲' }
             };
 
-            const getRandomInRange = (baseValue) => {
-                const rangeStart = Math.floor((baseValue - 1) / 3) * 3 + 1;
-                const rangeEnd = Math.min(rangeStart + 2, 4);
-                return rangeStart + Math.floor(Math.random() * (rangeEnd - rangeStart + 1));
+            // CHANGE 1: getRandomInRange now only applies randomness if enableRandomness is true
+            const getRandomInRange = (baseValue, enableRand, maxOffset) => {
+                if (!enableRand) return baseValue;
+                // Offset is clamped: result stays between 1 and 4
+                const minVal = Math.max(1, baseValue - maxOffset);
+                const maxVal = Math.min(4, baseValue + maxOffset);
+                return minVal + Math.floor(Math.random() * (maxVal - minVal + 1));
             };
 
             const addSpacingToSegment = (arr, y, startX, endX, maxSpace, tileType) => {
@@ -93,7 +98,6 @@
                         maxSpace,
                         endX - currentX
                     );
-                    
                     if (currentX + gapSize > endX) {
                         while (currentX <= endX) {
                             arr[y][currentX] = tileType;
@@ -101,9 +105,7 @@
                         }
                         break;
                     }
-                    
                     currentX += gapSize;
-                    
                     if (currentX <= endX) {
                         const segmentSize = Math.min(
                             1 + Math.floor(Math.random() * 3),
@@ -117,10 +119,10 @@
                 }
             };
 
-            const addVerticalSpacingToWall = (arr, x, startY, endY, maxSpace) => {
+            const addVerticalSpacingToWall = (arr, x, startY, endY, maxSpace, tileType = 'wallJump') => {
                 if (!enableSpacing || maxSpace === 0 || endY - startY < 2) {
                     for (let y = startY; y <= endY; y++) {
-                        arr[y][x] = 'wallJump';
+                        arr[y][x] = tileType;
                     }
                     return;
                 }
@@ -128,7 +130,7 @@
                 let currentY = startY;
                 const firstSegment = 1 + Math.floor(Math.random() * 2);
                 for (let i = 0; i < firstSegment && currentY <= endY; i++) {
-                    arr[currentY][x] = 'wallJump';
+                    arr[currentY][x] = tileType;
                     currentY++;
                 }
 
@@ -138,126 +140,132 @@
                         maxSpace,
                         endY - currentY
                     );
-                    
                     if (currentY + gapSize > endY) {
                         while (currentY <= endY) {
-                            arr[currentY][x] = 'wallJump';
+                            arr[currentY][x] = tileType;
                             currentY++;
                         }
                         break;
                     }
-                    
                     currentY += gapSize;
-                    
                     if (currentY <= endY) {
                         const segmentSize = Math.min(
                             1 + Math.floor(Math.random() * 3),
                             endY - currentY + 1
                         );
                         for (let i = 0; i < segmentSize && currentY <= endY; i++) {
-                            arr[currentY][x] = 'wallJump';
+                            arr[currentY][x] = tileType;
                             currentY++;
                         }
                     }
                 }
             };
 
-            const generateChunk = (type, diff, vert, dens) => {
-                const randomDiff = getRandomInRange(diff);
-                const randomVert = getRandomInRange(vert);
-                const randomDens = getRandomInRange(dens);
+            const generateChunk = (type, diff, vert, dens, enableRand, maxOffset) => {
+                const randomDiff = getRandomInRange(diff, enableRand, maxOffset);
+                const randomVert = getRandomInRange(vert, enableRand, maxOffset);
+                const randomDens = getRandomInRange(dens, enableRand, maxOffset);
 
                 const width = 10 + (randomDens * 2);
                 const height = 8 + (randomVert * 2);
                 const chunk = Array(height).fill(null).map(() => Array(width).fill('sky'));
-                
+
                 const entryY = Math.floor(height * 0.7);
                 chunk[entryY][0] = 'entry';
                 chunk[entryY][1] = 'floor';
-                
+
                 if (type === 'wall-jump') {
                     const wallHeight = 3 + randomDiff + randomVert;
                     const wallSpacing = Math.max(2, 4 - randomDiff);
                     const wallX = 3;
                     const wallX2 = wallX + wallSpacing;
-                    
+
+                    // CHANGE 2a: Wall always starts strictly above the entry point (endY = entryY - 1)
                     const wallStartY = Math.max(0, entryY - wallHeight);
-                    addVerticalSpacingToWall(chunk, wallX, wallStartY, entryY, maxSpaceLength);
-                    if (wallX2 < width) {
-                        addVerticalSpacingToWall(chunk, wallX2, wallStartY, entryY, maxSpaceLength);
+                    const wallEndY = entryY - 1; // Never at or below entry
+
+                    if (wallEndY >= wallStartY) {
+                        addVerticalSpacingToWall(chunk, wallX, wallStartY, wallEndY, maxSpaceLength);
+                        if (wallX2 < width) {
+                            addVerticalSpacingToWall(chunk, wallX2, wallStartY, wallEndY, maxSpaceLength);
+                        }
                     }
-                    
+
+                    // CHANGE 2b: Spikes placed at entryY+1 but NOT in the columns under the walls
                     if (randomDiff >= 3 && randomDens >= 2) {
                         const spikeY = entryY + 1;
                         if (spikeY < height) {
                             for (let x = wallX + 1; x < wallX2 && x < width; x++) {
+                                // Skip columns directly under the wall tiles
+                                if (x === wallX || x === wallX2) continue;
                                 chunk[spikeY][x] = 'spike';
                             }
                         }
                     }
-                    
+
                     const exitY = Math.max(1, entryY - wallHeight);
                     const exitX = Math.min(width - 2, wallX2 + 2 + randomDens);
                     const platformEnd = Math.min(exitX + 2, width - 1);
-                    
+
                     addSpacingToSegment(chunk, exitY, exitX, platformEnd, maxSpaceLength, 'platform');
                     chunk[exitY][Math.min(exitX + 1, width - 1)] = 'exit';
-                    
+
                 } else if (type === 'momentum') {
                     const hasSlope = randomDiff >= 2;
                     const hasMud = randomDiff >= 2;
                     const gapSize = 2 + randomDiff;
-                    
+
                     if (hasSlope) {
                         const slopeLength = 2 + randomDens;
                         for (let i = 0; i < slopeLength && i < height - entryY; i++) {
                             if (2 + i < width) chunk[entryY - i][2 + i] = 'slope';
                         }
                     }
-                    
+
                     if (hasMud && randomDens >= 2) {
                         const mudStart = hasSlope ? 5 : 3;
                         const mudLength = 2 + randomDens;
                         const mudEnd = Math.min(mudStart + mudLength - 1, width - gapSize - 4);
                         addSpacingToSegment(chunk, entryY, mudStart, mudEnd, maxSpaceLength, 'mud');
                     }
-                    
+
                     const platformX = width - 3;
                     const platformEnd = Math.min(platformX + 1, width - 1);
                     addSpacingToSegment(chunk, entryY, platformX, platformEnd, maxSpaceLength, 'platform');
                     if (platformX + 1 < width) chunk[entryY][platformX + 1] = 'exit';
-                    
+
                 } else if (type === 'vertical') {
                     const ladderHeight = 2 + randomVert + randomDens;
-                    
+
                     const ladderStartY = Math.max(0, entryY - ladderHeight);
-                    addVerticalSpacingToWall(chunk, 3, ladderStartY, entryY, maxSpaceLength);
-                    
+                    // CHANGE 3: Use 'ladder' tile type instead of 'wallJump' for vertical climb
+                    addVerticalSpacingToWall(chunk, 3, ladderStartY, entryY, maxSpaceLength, 'ladder');
+
                     if (entryY - ladderHeight >= 0) chunk[entryY - ladderHeight][4] = 'platform';
-                    
+
                     const numTrampolines = Math.min(2, 1 + Math.floor(randomDens / 2));
                     for (let t = 0; t < numTrampolines; t++) {
                         if (entryY - ladderHeight >= 0 && 5 + t < width) {
                             chunk[entryY - ladderHeight][5 + t] = 'trampoline';
                         }
                     }
-                    
+
                     const highY = Math.max(1, entryY - ladderHeight - 2 - randomDiff - randomVert);
                     const platformStart = 7 + randomDens;
                     const platformEnd = Math.min(platformStart + 2, width - 1);
                     addSpacingToSegment(chunk, highY, platformStart, platformEnd, maxSpaceLength, 'platform');
                     if (platformStart + 1 < width) chunk[highY][platformStart + 1] = 'exit';
-                    
+
                 } else if (type === 'timing') {
                     const numTrampolines = 1 + Math.floor(randomDiff / 2) + Math.floor(randomDens / 2);
                     const spacing = Math.max(1, 3 - randomDiff);
-                    
+
                     let x = 3;
                     for (let i = 0; i < numTrampolines && x < width - 4; i++) {
                         chunk[entryY][x] = 'trampoline';
                         x += spacing;
                     }
-                    
+
                     const exitY = randomDiff > 2 ? entryY - (1 + randomVert) : entryY;
                     const exitX = width - 3;
                     const platformEnd = Math.min(exitX + 1, width - 1);
@@ -266,24 +274,26 @@
                         if (exitX + 1 < width) chunk[exitY][exitX + 1] = 'exit';
                     }
                 }
-                
+
                 return chunk;
             };
 
             const handleGenerate = () => {
-                const newChunk = generateChunk(challengeType, difficulty, verticality, density);
+                const newChunk = generateChunk(challengeType, difficulty, verticality, density, enableRandomness, maxRandomOffset);
                 setCurrentChunk(newChunk);
                 setChunks([
-                    { 
-                        chunk: newChunk, 
-                        type: challengeType, 
-                        diff: difficulty, 
+                    {
+                        chunk: newChunk,
+                        type: challengeType,
+                        diff: difficulty,
                         vert: verticality,
                         dens: density,
                         spacing: enableSpacing,
                         maxSpace: maxSpaceLength,
+                        randomness: enableRandomness,
+                        maxOffset: maxRandomOffset,
                         timestamp: Date.now()
-                    }, 
+                    },
                     ...chunks
                 ]);
             };
@@ -291,7 +301,7 @@
             const handleBatchGenerate = () => {
                 const newChunks = [];
                 for (let i = 0; i < batchSize; i++) {
-                    const chunk = generateChunk(challengeType, difficulty, verticality, density);
+                    const chunk = generateChunk(challengeType, difficulty, verticality, density, enableRandomness, maxRandomOffset);
                     newChunks.push({
                         chunk,
                         type: challengeType,
@@ -300,6 +310,8 @@
                         dens: density,
                         spacing: enableSpacing,
                         maxSpace: maxSpaceLength,
+                        randomness: enableRandomness,
+                        maxOffset: maxRandomOffset,
                         timestamp: Date.now() + i
                     });
                 }
@@ -312,10 +324,10 @@
                 const ctx = canvas.getContext('2d');
                 const tileSize = 40;
                 const targetChunk = chunkData || currentChunk;
-                
+
                 canvas.width = targetChunk[0].length * tileSize;
                 canvas.height = targetChunk.length * tileSize;
-                
+
                 targetChunk.forEach((row, y) => {
                     row.forEach((tile, x) => {
                         ctx.fillStyle = tiles[tile].color;
@@ -324,7 +336,7 @@
                         ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
                     });
                 });
-                
+
                 canvas.toBlob((blob) => {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -345,27 +357,13 @@
                     maxSpace: maxSpaceLength
                 };
 
-                // Create a tile ID mapping for game engines
                 const tileMapping = {
-                    sky: 0,
-                    floor: 1,
-                    mud: 2,
-                    ladder: 3,
-                    platform: 4,
-                    trampoline: 5,
-                    wallJump: 6,
-                    entry: 7,
-                    exit: 8,
-                    slope: 9,
-                    spike: 10
+                    sky: 0, floor: 1, mud: 2, ladder: 3, platform: 4,
+                    trampoline: 5, wallJump: 6, entry: 7, exit: 8, slope: 9, spike: 10
                 };
 
-                // Convert chunk to numeric IDs
-                const numericData = targetChunk.map(row => 
-                    row.map(tile => tileMapping[tile])
-                );
+                const numericData = targetChunk.map(row => row.map(tile => tileMapping[tile]));
 
-                // Create comprehensive JSON export
                 const exportData = {
                     version: "1.0",
                     generator: "Platformer Challenge Chunk Generator",
@@ -381,9 +379,9 @@
                     dimensions: {
                         width: targetChunk[0].length,
                         height: targetChunk.length,
-                        tileSize: 32  // Recommended tile size for games
+                        tileSize: 32
                     },
-                    tileMapping: tileMapping,
+                    tileMapping,
                     tileLegend: {
                         0: { name: "sky", type: "empty", collision: false },
                         1: { name: "floor", type: "solid", collision: true },
@@ -399,7 +397,7 @@
                     },
                     layers: {
                         collision: numericData,
-                        visual: targetChunk  // Raw tile names for reference
+                        visual: targetChunk
                     }
                 };
 
@@ -421,49 +419,31 @@
                     dens: density
                 };
 
-                // Tiled uses 1-indexed tile IDs (0 = empty)
                 const tileMapping = {
-                    sky: 0,
-                    floor: 1,
-                    mud: 2,
-                    ladder: 3,
-                    platform: 4,
-                    trampoline: 5,
-                    wallJump: 6,
-                    entry: 7,
-                    exit: 8,
-                    slope: 9,
-                    spike: 10
+                    sky: 0, floor: 1, mud: 2, ladder: 3, platform: 4,
+                    trampoline: 5, wallJump: 6, entry: 7, exit: 8, slope: 9, spike: 10
                 };
 
-                // Flatten the 2D array into 1D array (Tiled format)
                 const flatData = [];
-                targetChunk.forEach(row => {
-                    row.forEach(tile => {
-                        flatData.push(tileMapping[tile]);
-                    });
-                });
+                targetChunk.forEach(row => row.forEach(tile => flatData.push(tileMapping[tile])));
 
-                // Create Tiled-compatible JSON
                 const tiledData = {
                     compressionlevel: -1,
                     height: targetChunk.length,
                     width: targetChunk[0].length,
                     infinite: false,
-                    layers: [
-                        {
-                            data: flatData,
-                            height: targetChunk.length,
-                            width: targetChunk[0].length,
-                            id: 1,
-                            name: "Tiles",
-                            opacity: 1,
-                            type: "tilelayer",
-                            visible: true,
-                            x: 0,
-                            y: 0
-                        }
-                    ],
+                    layers: [{
+                        data: flatData,
+                        height: targetChunk.length,
+                        width: targetChunk[0].length,
+                        id: 1,
+                        name: "Tiles",
+                        opacity: 1,
+                        type: "tilelayer",
+                        visible: true,
+                        x: 0,
+                        y: 0
+                    }],
                     nextlayerid: 2,
                     nextobjectid: 1,
                     orientation: "orthogonal",
@@ -473,29 +453,27 @@
                     tilewidth: 32,
                     type: "map",
                     version: "1.10",
-                    tilesets: [
-                        {
-                            firstgid: 1,
-                            source: "platformer_tileset.tsx",
-                            name: "Platformer Tiles",
-                            tilecount: 11,
-                            columns: 11,
-                            tilewidth: 32,
-                            tileheight: 32,
-                            tiles: [
-                                { id: 0, type: "floor", properties: [{ name: "collision", type: "bool", value: true }] },
-                                { id: 1, type: "mud", properties: [{ name: "collision", type: "bool", value: true }, { name: "speed", type: "float", value: 0.5 }] },
-                                { id: 2, type: "ladder", properties: [{ name: "climbable", type: "bool", value: true }] },
-                                { id: 3, type: "platform", properties: [{ name: "oneWayPlatform", type: "bool", value: true }] },
-                                { id: 4, type: "trampoline", properties: [{ name: "bounceForce", type: "float", value: 2.0 }] },
-                                { id: 5, type: "wallJump", properties: [{ name: "wallJumpable", type: "bool", value: true }] },
-                                { id: 6, type: "entry", properties: [{ name: "spawn", type: "bool", value: true }] },
-                                { id: 7, type: "exit", properties: [{ name: "goal", type: "bool", value: true }] },
-                                { id: 8, type: "slope", properties: [{ name: "angle", type: "int", value: 45 }] },
-                                { id: 9, type: "spike", properties: [{ name: "hazard", type: "bool", value: true }, { name: "damage", type: "int", value: 1 }] }
-                            ]
-                        }
-                    ],
+                    tilesets: [{
+                        firstgid: 1,
+                        source: "platformer_tileset.tsx",
+                        name: "Platformer Tiles",
+                        tilecount: 11,
+                        columns: 11,
+                        tilewidth: 32,
+                        tileheight: 32,
+                        tiles: [
+                            { id: 0, type: "floor", properties: [{ name: "collision", type: "bool", value: true }] },
+                            { id: 1, type: "mud", properties: [{ name: "collision", type: "bool", value: true }, { name: "speed", type: "float", value: 0.5 }] },
+                            { id: 2, type: "ladder", properties: [{ name: "climbable", type: "bool", value: true }] },
+                            { id: 3, type: "platform", properties: [{ name: "oneWayPlatform", type: "bool", value: true }] },
+                            { id: 4, type: "trampoline", properties: [{ name: "bounceForce", type: "float", value: 2.0 }] },
+                            { id: 5, type: "wallJump", properties: [{ name: "wallJumpable", type: "bool", value: true }] },
+                            { id: 6, type: "entry", properties: [{ name: "spawn", type: "bool", value: true }] },
+                            { id: 7, type: "exit", properties: [{ name: "goal", type: "bool", value: true }] },
+                            { id: 8, type: "slope", properties: [{ name: "angle", type: "int", value: 45 }] },
+                            { id: 9, type: "spike", properties: [{ name: "hazard", type: "bool", value: true }, { name: "damage", type: "int", value: 1 }] }
+                        ]
+                    }],
                     properties: [
                         { name: "challengeType", type: "string", value: chunkMetadata.type },
                         { name: "difficulty", type: "int", value: chunkMetadata.diff },
@@ -519,10 +497,10 @@
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         const tileSize = 40;
-                        
+
                         canvas.width = item.chunk[0].length * tileSize;
                         canvas.height = item.chunk.length * tileSize;
-                        
+
                         item.chunk.forEach((row, y) => {
                             row.forEach((tile, x) => {
                                 ctx.fillStyle = tiles[tile].color;
@@ -531,7 +509,7 @@
                                 ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
                             });
                         });
-                        
+
                         canvas.toBlob((blob) => {
                             const url = URL.createObjectURL(blob);
                             const a = document.createElement('a');
@@ -553,7 +531,7 @@
                     <div className="max-w-6xl mx-auto">
                         <h1 className="text-3xl font-bold mb-2">Platformer Challenge Chunk Generator</h1>
                         <p className="text-gray-400 mb-6">Improved with Spacing & Randomness</p>
-                        
+
                         <div className="bg-gray-800 rounded-lg p-6 mb-6">
                             <h2 className="text-xl font-semibold mb-3">Export Formats</h2>
                             <div className="grid md:grid-cols-3 gap-4 text-sm">
@@ -571,10 +549,10 @@
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div className="bg-gray-800 rounded-lg p-6 mb-6">
                             <h2 className="text-xl font-semibold mb-4">Parameters</h2>
-                            
+
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div>
                                     <label className="block mb-2 font-medium">Challenge Type</label>
@@ -595,18 +573,15 @@
                                         Difficulty: {difficulty}
                                         <span className="text-gray-400 ml-2">
                                             ({['Easy', 'Medium', 'Hard', 'Expert'][difficulty - 1]})
-                                            <span className="text-yellow-400 ml-1">±random</span>
+                                            {enableRandomness && <span className="text-yellow-400 ml-1">±{maxRandomOffset} random</span>}
                                         </span>
                                     </label>
                                     <input
-                                        type="range"
-                                        min="1"
-                                        max="4"
-                                        value={difficulty}
+                                        type="range" min="1" max="4" value={difficulty}
                                         onChange={(e) => setDifficulty(parseInt(e.target.value))}
                                         className="w-full"
                                     />
-                                    <p className="text-sm text-gray-400 mt-1">Gap size, wall height, obstacle spacing (with randomness)</p>
+                                    <p className="text-sm text-gray-400 mt-1">Gap size, wall height, obstacle spacing</p>
                                 </div>
 
                                 <div>
@@ -614,18 +589,15 @@
                                         Verticality: {verticality}
                                         <span className="text-gray-400 ml-2">
                                             ({['Flat', 'Medium', 'Tall', 'Tower'][verticality - 1]})
-                                            <span className="text-yellow-400 ml-1">±random</span>
+                                            {enableRandomness && <span className="text-yellow-400 ml-1">±{maxRandomOffset} random</span>}
                                         </span>
                                     </label>
                                     <input
-                                        type="range"
-                                        min="1"
-                                        max="4"
-                                        value={verticality}
+                                        type="range" min="1" max="4" value={verticality}
                                         onChange={(e) => setVerticality(parseInt(e.target.value))}
                                         className="w-full"
                                     />
-                                    <p className="text-sm text-gray-400 mt-1">Vertical space and climb height (with randomness)</p>
+                                    <p className="text-sm text-gray-400 mt-1">Vertical space and climb height</p>
                                 </div>
 
                                 <div>
@@ -633,18 +605,57 @@
                                         Density: {density}
                                         <span className="text-gray-400 ml-2">
                                             ({['Sparse', 'Normal', 'Dense', 'Packed'][density - 1]})
-                                            <span className="text-yellow-400 ml-1">±random</span>
+                                            {enableRandomness && <span className="text-yellow-400 ml-1">±{maxRandomOffset} random</span>}
                                         </span>
                                     </label>
                                     <input
-                                        type="range"
-                                        min="1"
-                                        max="4"
-                                        value={density}
+                                        type="range" min="1" max="4" value={density}
                                         onChange={(e) => setDensity(parseInt(e.target.value))}
                                         className="w-full"
                                     />
-                                    <p className="text-sm text-gray-400 mt-1">Number of obstacles and chunk width (with randomness)</p>
+                                    <p className="text-sm text-gray-400 mt-1">Number of obstacles and chunk width</p>
+                                </div>
+
+                                {/* CHANGE 1: Enable Randomness toggle + max offset slider */}
+                                <div className="md:col-span-2 border-t border-gray-700 pt-4">
+                                    <div className="flex items-center gap-4 mb-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={enableRandomness}
+                                                onChange={(e) => setEnableRandomness(e.target.checked)}
+                                                className="w-5 h-5"
+                                            />
+                                            <span className="font-medium">Enable Randomness</span>
+                                        </label>
+                                        <span className="text-sm text-gray-400">
+                                            Randomly varies each parameter by ±offset on generation
+                                        </span>
+                                    </div>
+
+                                    {enableRandomness && (
+                                        <div className="ml-7">
+                                            <label className="block mb-2 font-medium">
+                                                Max Random Offset: <span className="text-yellow-400">±{maxRandomOffset}</span>
+                                                <span className="text-gray-400 text-sm ml-2">(clamped to stay within 1–4)</span>
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min="1"
+                                                max="2"
+                                                value={maxRandomOffset}
+                                                onChange={(e) => setMaxRandomOffset(parseInt(e.target.value))}
+                                                className="w-full max-w-xs"
+                                            />
+                                            <div className="flex justify-between text-xs text-gray-400 max-w-xs mt-1">
+                                                <span>±1 (subtle)</span>
+                                                <span>±2 (wild)</span>
+                                            </div>
+                                            <p className="text-sm text-gray-400 mt-1">
+                                                Max offset is capped at 2 to prevent generation going out of bounds.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="md:col-span-2 border-t border-gray-700 pt-4">
@@ -664,7 +675,7 @@
                                     </div>
 
                                     {enableSpacing && (
-                                        <div>
+                                        <div className="ml-7">
                                             <label className="block mb-2 font-medium">
                                                 Max Space Length: {maxSpaceLength} tiles
                                             </label>
@@ -674,7 +685,7 @@
                                                 max="4"
                                                 value={maxSpaceLength}
                                                 onChange={(e) => setMaxSpaceLength(parseInt(e.target.value))}
-                                                className="w-full"
+                                                className="w-full max-w-xs"
                                             />
                                             <p className="text-sm text-gray-400 mt-1">
                                                 Maximum gap size between platform/wall segments
@@ -683,7 +694,7 @@
                                     )}
                                 </div>
                             </div>
-                            
+
                             <div className="flex flex-wrap gap-3 mt-6">
                                 <button
                                     onClick={handleGenerate}
@@ -710,7 +721,7 @@
                                         Batch Generate (Unique)
                                     </button>
                                 </div>
-                                
+
                                 {currentChunk && (
                                     <>
                                         <button
@@ -746,7 +757,6 @@
                                             <FileDown size={20} />
                                             Download All (Max 20)
                                         </button>
-                                        
                                         <button
                                             onClick={clearAllChunks}
                                             className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-6 py-3 rounded font-medium"
@@ -790,7 +800,7 @@
                                         ))}
                                     </div>
                                 </div>
-                                
+
                                 <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                                     <div className="flex items-center gap-2">
                                         <div className="w-6 h-6" style={{ backgroundColor: tiles.entry.color }}></div>
@@ -873,6 +883,7 @@
                                             <p className="text-xs text-gray-500 mb-2">
                                                 D:{item.diff} V:{item.vert} Dens:{item.dens}
                                                 {item.spacing && ` | Space:${item.maxSpace}`}
+                                                {item.randomness && ` | Rand:±${item.maxOffset}`}
                                             </p>
                                             <div style={{ display: 'grid', gap: '1px' }}>
                                                 {item.chunk.map((row, y) => (

@@ -23,3 +23,8 @@ Parameters:
 - Verticality
 - Density
 - Spaces
+- Randomness
+
+HOW TO USE TOOL/ VISUAL GUIDE: 
+
+file:///C:/Users/Anish/Downloads/Visual%20Guide%20to%20the%20Platform%20Generator.pdf

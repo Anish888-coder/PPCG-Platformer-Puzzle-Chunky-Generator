@@ -27,4 +27,4 @@ Parameters:
 
 HOW TO USE TOOL/ VISUAL GUIDE: 
 
-file:///C:/Users/Anish/Downloads/Visual%20Guide%20to%20the%20Platform%20Generator.pdf
+https://docs.google.com/document/d/1oQA-QNO1ZbYEAHQWpVkK9EMEi6SdztebmsGfC-ElImM/edit?usp=sharing 
